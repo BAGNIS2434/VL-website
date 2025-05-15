@@ -1,8 +1,9 @@
 from flask_migrate import Migrate
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
-from config import Config  # Fix the import path
-from models.user import db, User  # Fix the import path
-from models.video import Video, Annotation
+from .config import Config
+  # Fix the import path
+from .models.user import db, User  # Fix the import path
+from .models.video import Video, Annotation
 from flask_jwt_extended import (
     JWTManager, create_access_token, create_refresh_token,
     jwt_required, get_jwt_identity, get_jwt, unset_jwt_cookies
