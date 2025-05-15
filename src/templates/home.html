@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Video Library - Home{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}">
+<style>
+    body {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        margin: 0;
+    }
+    main {
+        flex: 1;
+    }
+    .footer {
+        margin-top: auto;
+        padding: 2rem;
+        background-color: #1a2234;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main>
+    <!-- Hero Section -->
+    <div class="hero-section">
+        <h1>Welcome to Video Library</h1>
+        <p class="hero-subtitle">Watch and organize videos with timestamped notes effortlessly.</p>
+        
+        <!-- Add features section -->
+        <div class="features-section">
+            <div class="feature-item">
+                <span class="feature-icon">📝</span>
+                <h3>Take Notes</h3>
+                <p>Add timestamped annotations to your videos</p>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon">🔍</span>
+                <h3>Quick Review</h3>
+                <p>Jump to specific moments using timestamps</p>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon">📚</span>
+                <h3>Organize</h3>
+                <p>Keep your video library structured</p>
+            </div>
+        </div>
+
+        <div class="cta-buttons">
+            <a href="{{ url_for('signup_page') }}" class="cta-button primary">Get Started</a>
+            <a href="{{ url_for('login_page') }}" class="cta-button secondary">Sign In</a>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <nav class="footer-nav">
+            <a href="#">About</a>
+            <a href="#">Contact</a>
+            <a href="#">Privacy Policy</a>
+        </nav>
+        <p class="copyright">© 2025 Video Library. All rights reserved.</p>
+    </footer>
+</main>
+{% endblock %}

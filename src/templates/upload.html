@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Video Library - Upload{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='upload.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <h1>Add YouTube Video</h1>
+    <form id="videoForm" class="space-y-4">
+        <div>
+            <label for="title">Video Title</label>
+            <input type="text" id="title" name="title" placeholder="Enter video title" required />
+        </div>
+        <div>
+            <label for="youtubeId">YouTube Video ID</label>
+            <input type="text" id="youtubeId" name="youtubeId" placeholder="e.g. dQw4w9WgXcQ" required />
+            <p class="hint">Found in the YouTube URL after "v="</p>
+        </div>
+        <div>
+            <label for="description">Description</label>
+            <textarea id="description" name="description" placeholder="Enter video description" rows="3"></textarea>
+        </div>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="error">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <button type="submit">Add Video</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const form = document.getElementById("videoForm");
+        const titleInput = document.getElementById("title");
+        const youtubeIdInput = document.getElementById("youtubeId");
+        const descriptionInput = document.getElementById("description");
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            form.insertBefore(errorDiv, form.lastElementChild);
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const title = titleInput.value.trim();
+            const youtubeId = youtubeIdInput.value.trim();
+            const description = descriptionInput.value.trim();
+
+            if (!title || !youtubeId) {
+                showError("Please fill in all required fields");
+                return;
+            }
+
+            try {
+                const response = await fetch("/api/videos/create", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({
+                        title,
+                        youtube_id: youtubeId,
+                        description
+                    }),
+                    credentials: 'include'  // Changed from same-origin to include
+                });
+
+                if (response.status === 401) {
+                    // Redirect to login if unauthorized
+                    window.location.href = '/login/?next=' + encodeURIComponent(window.location.pathname);
+                    return;
+                }
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to save video');
+                }
+
+                const data = await response.json();
+                window.location.href = `/stream/${data.id}`;
+            } catch (err) {
+                console.error('Error:', err);
+                showError(err.message);
+            }
+        });
+    });
+</script>
+{% endblock %}

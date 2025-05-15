@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block title %}Video Annotations - Video Library{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='stream.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="flex-container">
+    <div class="video-section">
+      <div id="videoContainer">
+        <div class="aspect-video bg-gray-200 animate-pulse"></div>
+      </div>
+      <h1 id="videoTitle">Loading video...</h1>
+      <p id="videoDescription" class="description"></p>
+      {% if user_id == video.user_id %}
+      <div class="video-actions mt-4 space-x-4">
+        <button onclick="editVideo()" class="edit-video-btn bg-blue-500 text-white px-4 py-2 rounded">
+          Edit Video
+        </button>
+        <button onclick="deleteVideo()" class="delete-video-btn bg-red-500 text-white px-4 py-2 rounded">
+          Delete Video
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="annotations-section">
+      <h2>Annotations</h2>
+
+      <form id="annotationForm" class="mb-4 space-y-4">
+        <div class="timestamp-input-group">
+          <input
+            type="text"
+            placeholder="Timestamp (e.g. 1:30)"
+            id="timestampInput"
+            class="w-full p-2 border rounded"
+          />
+          <button type="button" id="currentTimeBtn" class="timestamp-btn">
+            Current Time
+          </button>
+        </div>
+        <div>
+          <textarea
+            placeholder="Add your annotation..."
+            id="annotationInput"
+            class="w-full p-2 border rounded"
+            rows="3"
+          ></textarea>
+        </div>
+        <div id="errorMessage" class="error" style="display: none;"></div>
+        <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded w-full">
+          Add Annotation
+        </button>
+      </form>
+
+      <div id="annotationsList" class="space-y-4">
+        <div class="no-annotations">Loading annotations...</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    const videoData = {{ video|tojson|safe }};
+    const initialAnnotations = {{ annotations|tojson|safe }};
+    const userId = {{ user_id|tojson|safe }};
+    let annotations = initialAnnotations;
+    let player;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
+    function initializePlayer() {
+      try {
+        console.log("Video data:", videoData);
+
+        if (!videoData) {
+          throw new Error('Video data is missing');
+        }
+
+        let cleanVideoId = videoData.youtube_id || '';
+        if (cleanVideoId.includes('youtube.com') || cleanVideoId.includes('youtu.be')) {
+          try {
+            const url = new URL(cleanVideoId);
+            if (url.hostname.includes('youtube.com')) {
+              cleanVideoId = url.searchParams.get('v') || '';
+            } else if (url.hostname.includes('youtu.be')) {
+              cleanVideoId = url.pathname.substring(1);
+            }
+          } catch (urlError) {
+            console.error('URL parsing error:', urlError);
+            throw new Error('Invalid YouTube URL format');
+          }
+        }
+
+        cleanVideoId = cleanVideoId.trim();
+        console.log("Cleaned YouTube ID:", cleanVideoId);
+
+        if (!cleanVideoId || !/^[a-zA-Z0-9_-]{11}$/.test(cleanVideoId)) {
+          throw new Error(`Invalid YouTube ID format: "${cleanVideoId}"`);
+        }
+
+        document.getElementById("videoContainer").innerHTML = `
+          <div class="aspect-video">
+            <div id="youtube-player" data-video-id="${cleanVideoId}"></div>
+          </div>`;
+
+        player = new YT.Player('youtube-player', {
+          videoId: cleanVideoId,
+          playerVars: {
+            'autoplay': 0,
+            'controls': 1,
+            'enablejsapi': 1,
+            'origin': window.location.origin,
+            'rel': 0,
+            'fs': 1,
+            'modestbranding': 1,
+            'playsinline': 1,
+            'version': 3,
+            'widgetid': 1
+          },
+          events: {
+            'onReady': onPlayerReady,
+            'onError': onPlayerError,
+            'onStateChange': onPlayerStateChange
+          }
+        });
+
+        document.getElementById("videoTitle").textContent = videoData.title || 'Untitled Video';
+        document.getElementById("videoDescription").textContent = videoData.description || "";
+
+      } catch (err) {
+        console.error('Player initialization error:', {
+          message: err.message,
+          videoData: videoData,
+          youtubeId: videoData?.youtube_id
+        });
+        showPlayerError(`Failed to initialize video player: ${err.message}`);
+
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`Retrying initialization (attempt ${retryCount}/${MAX_RETRIES})...`);
+          setTimeout(initializePlayer, 1000);
+        }
+      }
+    }
+
+    function loadYouTubePlayer() {
+      if (!window.YT || !window.YT.Player) {
+        console.log('Waiting for YouTube API...');
+        setTimeout(loadYouTubePlayer, 100);
+        return;
+      }
+      console.log('YouTube API loaded, initializing player...');
+      initializePlayer();
+    }
+
+    if (!window.YT) {
+      window.onYouTubeIframeAPIReady = loadYouTubePlayer;
+    } else {
+      loadYouTubePlayer();
+    }
+
+    function onPlayerReady(event) {
+      console.log('Player ready');
+      const loadingElement = document.querySelector('.bg-gray-200');
+      if (loadingElement) {
+        loadingElement.classList.remove('animate-pulse');
+      }
+    }
+
+    function onPlayerStateChange(event) {
+      const states = {
+        '-1': 'unstarted',
+        '0': 'ended',
+        '1': 'playing',
+        '2': 'paused',
+        '3': 'buffering',
+        '5': 'video cued'
+      };
+      console.log('Player state:', states[event.data]);
+    }
+
+    function onPlayerError(event) {
+      console.error('Player error:', event.data);
+      let errorMessage = 'An error occurred while loading the video.';
+
+      switch (event.data) {
+        case 2:
+          errorMessage = 'Invalid video ID. Please check the YouTube ID.';
+          break;
+        case 5:
+          errorMessage = 'The requested video content cannot be played.';
+          break;
+        case 100:
+          errorMessage = 'The video has been removed or set to private.';
+          break;
+        case 101:
+        case 150:
+          errorMessage = 'The video owner does not allow embedding.';
+          break;
+      }
+
+      showPlayerError(errorMessage);
+    }
+
+    function showPlayerError(message) {
+      document.getElementById("videoContainer").innerHTML = `
+        <div class="error-message" style="padding: 2rem; text-align: center;">
+          <p>${message}</p>
+          <p>Please verify that:</p>
+          <ul style="list-style: none; padding: 0;">
+            <li>• The YouTube video ID is correct</li>
+            <li>• The video is publicly available</li>
+            <li>• Embedding is enabled for the video</li>
+          </ul>
+        </div>`;
+    }
+
+    function jumpToTimestamp(timestamp) {
+      const seconds = convertTimestampToSeconds(timestamp);
+      if (player && typeof player.seekTo === 'function') {
+        player.seekTo(seconds, true);
+        player.playVideo();
+      }
+    }
+
+    function convertTimestampToSeconds(timestamp) {
+      const parts = timestamp.split(':').reverse();
+      return parts.reduce((acc, part, index) => {
+        return acc + parseInt(part) * Math.pow(60, index);
+      }, 0);
+    }
+
+    function validateTimestamp(timestamp) {
+      const timeRegex = /^(?:(?:([01]?\d|2[0-3]):)?([0-5]?\d):)?([0-5]?\d)$/;
+      return timeRegex.test(timestamp);
+    }
+
+    function formatTimestamp(seconds) {
+      const pad = num => String(num).padStart(2, '0');
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+    }
+
+    document.getElementById("currentTimeBtn").addEventListener("click", () => {
+      if (player && typeof player.getCurrentTime === 'function') {
+        const currentTime = player.getCurrentTime();
+        document.getElementById("timestampInput").value = formatTimestamp(currentTime);
+      }
+    });
+
+    const fetchAnnotations = async () => {
+      try {
+        const response = await fetch("/api/annotations/list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ videoId: videoData.id }),
+          credentials: 'same-origin'
+        });
+        if (!response.ok) throw new Error("Couldn't load annotations");
+        const data = await response.json();
+        annotations = data;
+        renderAnnotations();
+      } catch (err) {
+        console.error(err);
+        document.getElementById("annotationsList").innerHTML =
+          '<div class="no-annotations">Error loading annotations</div>';
+      }
+    };
+
+    const renderAnnotations = () => {
+      const container = document.getElementById("annotationsList");
+      if (annotations.length === 0) {
+        container.innerHTML =
+          '<div class="no-annotations">No annotations yet</div>';
+        return;
+      }
+      container.innerHTML = annotations
+        .map(
+          (annotation) => `
+          <div class="annotation-item" data-id="${annotation.id}">
+            <div class="annotation-timestamp">
+              <span class="timestamp-link" onclick="window.jumpToTimestamp('${annotation.timestamp}')">${annotation.timestamp}</span>
+            </div>
+            <div class="annotation-content">${annotation.content}</div>
+            <div class="annotation-actions">
+              <button onclick="editAnnotation(${annotation.id})" class="edit-btn">Edit</button>
+              <button onclick="deleteAnnotation(${annotation.id})" class="delete-btn">Delete</button>
+            </div>
+          </div>
+        `
+        )
+        .join("");
+    };
+
+    async function deleteAnnotation(annotationId) {
+      if (!confirm('Delete this annotation?')) return;
+
+      try {
+        const response = await fetch(`/api/annotations/${annotationId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+          return;
+        }
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to delete annotation');
+        }
+
+        annotations = annotations.filter(a => a.id !== annotationId);
+        renderAnnotations();
+        showSuccessMessage("Annotation deleted successfully!");
+      } catch (err) {
+        console.error(err);
+        alert(err.message || 'Failed to delete annotation');
+      }
+    }
+
+    async function editAnnotation(annotationId) {
+      const annotation = annotations.find(a => a.id === annotationId);
+      if (!annotation) return;
+
+      const newContent = prompt('Edit annotation:', annotation.content);
+      if (!newContent) return;
+
+      try {
+        const response = await fetch(`/api/annotations/${annotationId}`, {
+          method: 'PUT',
+          headers: { 
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ content: newContent }),
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+          return;
+        }
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to update annotation');
+        }
+
+        const updatedAnnotation = await response.json();
+
+        const index = annotations.findIndex(a => a.id === annotationId);
+        annotations[index] = updatedAnnotation;
+        renderAnnotations();
+        showSuccessMessage("Annotation updated successfully!");
+      } catch (err) {
+        console.error(err);
+        alert(err.message || 'Failed to update annotation');
+      }
+    }
+
+    const addAnnotation = async (e) => {
+      e.preventDefault();
+      const timestamp = document.getElementById("timestampInput").value.trim();
+      const content = document.getElementById("annotationInput").value.trim();
+      const errorMessage = document.getElementById("errorMessage");
+
+      if (!userId) {
+        errorMessage.textContent = "Please sign in to add annotations";
+        errorMessage.style.display = "block";
+        return;
+      }
+
+      if (!content) {
+        errorMessage.textContent = "Please add some content for your annotation";
+        errorMessage.style.display = "block";
+        return;
+      }
+
+      if (!timestamp || !validateTimestamp(timestamp)) {
+        errorMessage.textContent = "Please enter a valid timestamp (e.g. 1:30 or 1:23:45)";
+        errorMessage.style.display = "block";
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/annotations/create", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            videoId: videoData.id,
+            content,
+            timestamp,
+          }),
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+          return;
+        }
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "Failed to add annotation");
+        }
+
+        const newAnnotation = await response.json();
+        annotations.push(newAnnotation);
+        renderAnnotations();
+
+        document.getElementById("timestampInput").value = "";
+        document.getElementById("annotationInput").value = "";
+        errorMessage.style.display = "none";
+
+        showSuccessMessage("Annotation added successfully!");
+      } catch (err) {
+        console.error('Annotation error:', err);
+        errorMessage.textContent = err.message || "Couldn't add annotation";
+        errorMessage.style.display = "block";
+      }
+    };
+
+    async function deleteVideo() {
+      if (!confirm('Are you sure you want to delete this video? This action cannot be undone.')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/videos/${videoData.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+          return;
+        }
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to delete video');
+        }
+
+        window.location.href = '/profile';
+      } catch (err) {
+        console.error(err);
+        alert(err.message || 'Failed to delete video');
+      }
+    }
+
+    async function editVideo() {
+      const newTitle = prompt('Edit video title:', videoData.title);
+      const newDescription = prompt('Edit video description:', videoData.description);
+      
+      if (!newTitle) return;
+
+      try {
+        const response = await fetch(`/api/videos/${videoData.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            title: newTitle,
+            description: newDescription || ''
+          }),
+          credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+          window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+          return;
+        }
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to update video');
+        }
+
+        const updatedVideo = await response.json();
+        videoData = updatedVideo;
+        document.getElementById("videoTitle").textContent = updatedVideo.title;
+        document.getElementById("videoDescription").textContent = updatedVideo.description || "";
+        showSuccessMessage("Video updated successfully!");
+      } catch (err) {
+        console.error(err);
+        alert(err.message || 'Failed to update video');
+      }
+    }
+
+    function showSuccessMessage(message) {
+      const successDiv = document.createElement('div');
+      successDiv.className = 'success-message';
+      successDiv.textContent = message;
+      const form = document.getElementById("annotationForm");
+      form.insertBefore(successDiv, form.firstChild);
+      setTimeout(() => successDiv.remove(), 3000);
+    }
+
+    window.jumpToTimestamp = jumpToTimestamp;
+    window.editAnnotation = editAnnotation;
+    window.deleteAnnotation = deleteAnnotation;
+    window.deleteVideo = deleteVideo;
+    window.editVideo = editVideo;
+
+    await fetchAnnotations();
+
+    document.getElementById("annotationForm").addEventListener("submit", addAnnotation);
+  });
+</script>
+{% endblock %}

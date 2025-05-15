@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Video Library</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='authentication.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1>Create Account</h1>
+            <p>Sign up to get started with Video Library</p>
+            {% if error %}
+                <div class="error-message">{{ error }}</div>
+            {% endif %}
+            <form method="POST" action="{{ url_for('signup_page') }}">
+                <label for="username">Username</label>
+                <div class="input-group">
+                    <input type="text" id="username" name="username" placeholder="Choose a username" required>
+                </div>
+                <label for="name">Name</label>
+                <div class="input-group">
+                    <input type="text" id="name" name="name" placeholder="Enter your name" required>
+                </div>
+                <label for="email">Email</label>
+                <div class="input-group">
+                    <input type="email" id="email" name="email" placeholder="Enter your email" required>
+                </div>
+                <label for="password">Password</label>
+                <div class="input-group">
+                    <input type="password" id="password" name="password" placeholder="Create a password" required>
+                </div>
+                <button type="submit" class="btn">Sign Up</button>
+            </form>
+            <p class="signup-text">Already have an account? <a href="{{ url_for('login_page') }}">Log in</a></p>
+        </div>
+    </div>
+</body>
+</html>
