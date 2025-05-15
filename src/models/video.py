@@ -1,4 +1,4 @@
-from models.user import db
+from .models.user import db
 from datetime import datetime
 from sqlalchemy import desc
 
